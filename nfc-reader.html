@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scale Up - NFC</title>
+    <style>
+        body {
+            font-family: 'system-ui', -apple-system, sans-serif;
+            background: #1a1a1a;
+            color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .card {
+            background: #D9FF00;
+            padding: 3rem 2rem;
+            border-radius: 40px;
+            text-align: center;
+            width: 90%;
+            max-width: 450px;
+        }
+
+        h1 {
+            font-family: 'Arial Black', Impact, sans-serif;
+            font-size: 3.5rem;
+            text-transform: uppercase;
+            margin: 0 0 0.5rem 0;
+            line-height: 1;
+            letter-spacing: -2px;
+            color: #1a1a1a;
+        }
+
+        p {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+            color: #333;
+        }
+
+        input {
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            border: 3px solid #1a1a1a;
+            background: transparent;
+            color: #1a1a1a;
+            font-size: 1.1rem;
+            font-weight: bold;
+            box-sizing: border-box;
+        }
+
+        input::placeholder {
+            color: #555;
+        }
+
+        input:focus {
+            background: #1a1a1a;
+            color: #D9FF00;
+            outline: none;
+        }
+
+        #status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 12px;
+            font-weight: 800;
+            font-size: 1rem;
+            text-transform: uppercase;
+        }
+
+        .idle {
+            border: 2px dashed #1a1a1a;
+            color: #1a1a1a;
+        }
+
+        .scanning {
+            background: #1a1a1a;
+            color: #D9FF00;
+            animation: pulse 1.5s infinite;
+        }
+
+        .success {
+            background: #1a1a1a;
+            color: #00ff66;
+        }
+
+        .error {
+            background: #1a1a1a;
+            color: #ff3366;
+        }
+
+        button {
+            background: #1a1a1a;
+            color: #D9FF00;
+            border: none;
+            padding: 18px 30px;
+            border-radius: 50px;
+            font-weight: 900;
+            font-size: 1.2rem;
+            text-transform: uppercase;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.2s;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button:disabled {
+            background: #555;
+            color: #888;
+            cursor: not-allowed;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="card">
+        <h1>SCALE UP</h1>
+        <p>Associez votre bracelet à votre nom</p>
+
+        <input type="text" id="username" placeholder="Entrez votre prénom..." autocomplete="off">
+
+        <div id="status" class="idle">Prêt à l'enregistrement</div>
+
+        <button id="scanBtn">Lancer le scan NFC</button>
+    </div>
+
+    <script>
+        const scanBtn = document.getElementById('scanBtn');
+        const statusDiv = document.getElementById('status');
+        const usernameInput = document.getElementById('username');
+
+        if (!('NDEFReader' in window)) {
+            statusDiv.textContent = "❌ NFC non supporté sur ce navigateur (utilisez Chrome sur Android)";
+            statusDiv.className = "error";
+            scanBtn.disabled = true;
+        }
+
+        scanBtn.addEventListener('click', async () => {
+            const nom = usernameInput.value.trim();
+
+            if (!nom) {
+                alert("Veuillez entrer votre prénom avant de scanner !");
+                return;
+            }
+
+            try {
+                const ndef = new NDEFReader();
+                await ndef.scan();
+
+                statusDiv.textContent = "📡 Approchez votre badge du dos du téléphone...";
+                statusDiv.className = "scanning";
+                scanBtn.disabled = true;
+
+                ndef.onreading = async (event) => {
+                    const uid = event.serialNumber;
+                    console.log("Badge détecté : " + uid);
+
+                    statusDiv.textContent = "⏳ Enregistrement en cours...";
+
+                    try {
+                        const response = await fetch('/register', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ uid: uid, nom: nom })
+                        });
+
+                        const data = await response.json();
+
+                        if (data.success) {
+                            statusDiv.textContent = `✅ Lié à ${nom} !`;
+                            statusDiv.className = "success";
+                            alert(`C'est bon ${nom} ! Votre bracelet est configuré.`);
+                        } else {
+                            throw new Error(data.message);
+                        }
+                    } catch (err) {
+                        statusDiv.textContent = "❌ Erreur serveur";
+                        statusDiv.className = "error";
+                        console.error(err);
+                    } finally {
+                        setTimeout(() => {
+                            statusDiv.textContent = "Prêt à l'enregistrement";
+                            statusDiv.className = "idle";
+                            scanBtn.disabled = false;
+                        }, 3000);
+                    }
+                };
+
+                ndef.onreadingerror = () => {
+                    statusDiv.textContent = "❌ Erreur de lecture. Réessayez.";
+                    statusDiv.className = "error";
+                };
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.textContent = "❌ Erreur : " + error.message;
+                statusDiv.className = "error";
+            }
+        });
+    </script>
+</body>
+
+</html>

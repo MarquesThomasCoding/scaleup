@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Classement Scale Up</title>
+    <style>
+        body { font-family: 'system-ui', -apple-system, sans-serif; background: #1a1a1a; color: #1a1a1a; margin: 0; padding: 40px 20px; }
+        .container { max-width: 900px; margin: 0 auto; padding: 50px; background: #D9FF00; border-radius: 50px; }
+        
+        h1 { font-family: 'Arial Black', Impact, sans-serif; font-size: 4.5rem; text-transform: uppercase; margin: 0 0 20px 0; letter-spacing: -2px; color: #1a1a1a; line-height: 1; }
+        
+        #live-section { margin-bottom: 50px; }
+        .live-climber {
+            background: #1a1a1a; padding: 20px 30px; margin: 15px 0; border-radius: 25px;
+            font-size: 1.8rem; font-weight: 900; color: #D9FF00;
+            display: flex; justify-content: space-between; align-items: center; text-transform: uppercase;
+        }
+        .live-time { font-family: monospace; font-size: 2.2rem; color: #D9FF00; }
+        .pulse { animation: blink 1.5s infinite; display: inline-block; margin-right: 15px; }
+        @keyframes blink { 50% { opacity: 0.3; } }
+
+        table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+        th, td { padding: 25px 20px; border-bottom: 4px solid #1a1a1a; text-align: left; }
+        th { background: #1a1a1a; color: #D9FF00; font-size: 1.3rem; text-transform: uppercase; font-weight: 900; letter-spacing: 1px; }
+        th:first-child { border-top-left-radius: 20px; border-bottom-left-radius: 20px; }
+        th:last-child { border-top-right-radius: 20px; border-bottom-right-radius: 20px; text-align: right; }
+        
+        td { font-size: 1.6rem; font-weight: 800; color: #1a1a1a; }
+        td:last-child { text-align: right; }
+        tr:last-child td { border-bottom: none; }
+        
+        tr:nth-child(1) td { font-size: 2.2rem; font-family: 'Arial Black', Impact, sans-serif; text-transform: uppercase; }
+        
+        .highlight { color: #1a1a1a; font-family: monospace; font-size: 1.8rem; font-weight: 900; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>EN DIRECT</h1>
+        <div id="live-section"></div>
+
+        <h1>TOP GRIMPEURS</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>Rang</th>
+                    <th>Nom</th>
+                    <th>Temps</th>
+                </tr>
+            </thead>
+            <tbody id="board">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let activeClimbers = [];
+        let serverTimeOffset = 0;
+
+        function connectSSE() {
+            const eventSource = new EventSource('/api/stream');
+
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.serverTime) {
+                        serverTimeOffset = data.serverTime - Date.now();
+                    }
+                    
+                    const scores = data.scores || [];
+                    activeClimbers = data.active || [];
+                    
+                    const tbody = document.getElementById('board');
+                    tbody.innerHTML = scores.map((s, index) => `
+                        <tr>
+                            <td>${index + 1} ${index === 0 ? '🥇' : ''}</td>
+                            <td>${s.nom}</td>
+                            <td class="highlight">${s.temps.toFixed(3)}s</td>
+                        </tr>
+                    `).join('');
+                } catch (e) {
+                    console.log("Erreur parsing data", e);
+                }
+            };
+
+            eventSource.onerror = function(err) {
+                console.log("Erreur SSE. Reconnexion...");
+                eventSource.close();
+                setTimeout(connectSSE, 3000);
+            };
+        }
+
+        function updateLiveCounters() {
+            const liveSection = document.getElementById('live-section');
+            if (activeClimbers.length === 0) {
+                liveSection.innerHTML = "<p style='color:#888;'>Aucun grimpeur pour le moment...</p>";
+            } else {
+                const now = Date.now() + serverTimeOffset;
+                liveSection.innerHTML = activeClimbers.map(c => {
+                    if (c.touching && c.freezeTime !== undefined) {
+                        return `
+                            <div class="live-climber" style="background: #fff; color: #1a1a1a; border: 4px solid #1a1a1a;">
+                                <span><span class="pulse">⏳</span> ${c.nom}</span>
+                                <span class="live-time" style="color: #1a1a1a;">${c.freezeTime.toFixed(2)}s (Validation...)</span>
+                            </div>
+                        `;
+                    } else {
+                        const elapsed = Math.max(0, now - c.startTime) / 1000;
+                        return `
+                            <div class="live-climber">
+                                <span><span class="pulse">🔴</span> ${c.nom}</span>
+                                <span class="live-time">${elapsed.toFixed(2)}s</span>
+                            </div>
+                        `;
+                    }
+                }).join('');
+            }
+            requestAnimationFrame(updateLiveCounters);
+        }
+
+        connectSSE();
+        requestAnimationFrame(updateLiveCounters);
+    </script>
+</body>
+</html>
