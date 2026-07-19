@@ -6,11 +6,10 @@ from mfrc522 import MFRC522
 
 WIFI_SSID = "WIFI_SSID"
 WIFI_PASSWORD = "WIFI_PASSWORD"
-API_URL = "https://API_URL:5000/upload"
-API_START_URL = "https://API_START_URL:5000/start"
-API_TOUCH_URL = "https://API_TOUCH_URL:5000/touch"
-API_RESUME_URL = "https://API_RESUME_URL:5000/resume"
-API_RESET_URL = "https://API_RESET_URL:5000/reset"
+API_URL = "http://192.168.1.100:3001/api/iot/bip"
+IOT_API_KEY = "73a06dbdb0aa1b81db178b1c95140ffaf881ef04915e185e"
+MAC_START = "MAC_start"
+MAC_TOP = "MAC_top"
 
 spi = SPI(0, baudrate=1000000, polarity=0, phase=0, sck=Pin(2), mosi=Pin(3), miso=Pin(4))
 reader_start = MFRC522(spi, 1, 0)
@@ -35,12 +34,6 @@ while True:
         if len(active_climbers) > 0:
             print("🛑 BOUTON RESET PRESSÉ ! Phase annulée.")
             active_climbers.clear()
-            try:
-                res_reset = urequests.post(API_RESET_URL, json={}, timeout=2.0)
-                res_reset.close()
-                print("✅ Reset synchronisé avec le serveur")
-            except Exception as e:
-                print(f"⚠️ Erreur push reset : {e}")
         utime.sleep(1.0)
         continue
 
@@ -53,8 +46,9 @@ while True:
                 active_climbers[current_uid] = utime.ticks_ms()
                 print(f"🚀 DÉPART : {current_uid}")
                 try:
-                    payload = {"uid": current_uid}
-                    res_start = urequests.post(API_START_URL, json=payload, timeout=2.0)
+                    payload = {"nfcUid": current_uid, "macAddress": MAC_START}
+                    headers = {"Content-Type": "application/json", "x-iot-key": IOT_API_KEY}
+                    res_start = urequests.post(API_URL, json=payload, headers=headers, timeout=2.0)
                     res_start.close()
                 except Exception as e:
                     print(f"⚠️ Erreur départ : {e}")
@@ -70,10 +64,6 @@ while True:
                 end_tick = utime.ticks_ms() 
                 frozen_time = utime.ticks_diff(end_tick, active_climbers[end_uid]) / 1000
                 print(f"Contact {end_uid} ! Maintien de 3s en cours...")
-                try:
-                    urequests.post(API_TOUCH_URL, json={"uid": end_uid, "temps": frozen_time}, timeout=1.0).close()
-                except Exception as e:
-                    print(f"⚠️ Erreur touche : {e}")
 
                 top_start_hit = utime.ticks_ms()
                 valid = True
@@ -98,10 +88,6 @@ while True:
                     if missed_readings > max_missed:
                         print(f"❌ Lâché trop tôt pour {end_uid} !")
                         valid = False
-                        try:
-                            urequests.post(API_RESUME_URL, json={"uid": end_uid}, timeout=1.0).close()
-                        except Exception as e:
-                            print(f"⚠️ Erreur : {e}")
                         break
                         
                     utime.sleep(0.1)
@@ -111,8 +97,9 @@ while True:
                     print(f"🏁 VALIDÉ ! Temps de grimpe : {total_seconds}s")
                     
                     try:
-                        payload = {"uid": end_uid, "temps": total_seconds}
-                        res = urequests.post(API_URL, json=payload, timeout=3.0)
+                        payload = {"nfcUid": end_uid, "macAddress": MAC_TOP}
+                        headers = {"Content-Type": "application/json", "x-iot-key": IOT_API_KEY}
+                        res = urequests.post(API_URL, json=payload, headers=headers, timeout=3.0)
                         res.close()
                         print("✅ Données envoyées")
                     except Exception as e:
